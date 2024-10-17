@@ -1,6 +1,27 @@
 import mysql.connector
-from mysql.connector import Error
+from mysql.connector import connect, Error
 import pandas as pd
+
+def connect_to_mysql():
+    """
+    Connect to MySQL database and return the connection and cursor.
+    """
+    conn = None
+    cursor = None
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="vishal"
+        )
+        cursor = conn.cursor()
+        # Create database if it does not exist
+        cursor.execute("CREATE DATABASE IF NOT EXISTS data_spark")
+        conn.database = 'data_spark'  # Select the database
+        print("Connected to MySQL database")
+    except Error as e:
+        print(f"Error connecting to MySQL: {e}")
+    return conn, cursor
 
 def create_table(table_name, cursor):
     """
@@ -89,11 +110,12 @@ def insert_data(table_name, df, cursor):
 
         try:
             # Handle primary key duplicates
-            if table_name in ["Sales", "Products", "Customer"]:
+            if table_name in ["Sales", "Products", "Customer", "Exchange_Rates"]:
                 primary_key_column = {
                     "Sales": 'Order Number',
                     "Products": 'ProductKey',
-                    "Customer": 'CustomerKey'
+                    "Customer": 'CustomerKey',
+                    "Exchange_Rates": 'Date-Currency'
                 }.get(table_name)
                 
                 if primary_key_column:
@@ -102,7 +124,12 @@ def insert_data(table_name, df, cursor):
                     existing_keys = {row[0] for row in cursor.fetchall()}
 
                     # Filter out rows with existing primary keys
-                    df = df[~df[primary_key_column].isin(existing_keys)]
+                    if table_name == "Exchange_Rates":
+                        df['Date-Currency'] = df['Date'].astype(str) + '-' + df['Currency']
+                        existing_keys = set(row[0] for row in cursor.execute(f"SELECT CONCAT(Date, '-', Currency) FROM Exchange_Rates").fetchall())
+                        df = df[~df['Date-Currency'].isin(existing_keys)]
+                    else:
+                        df = df[~df[primary_key_column].isin(existing_keys)]
 
                     if df.empty:
                         print(f"No new data to insert into {table_name}.")
@@ -115,30 +142,7 @@ def insert_data(table_name, df, cursor):
     else:
         print(f"No data to insert for {table_name}.")
 
-def connect_to_mysql():
-    """
-    Connect to MySQL database and return the connection and cursor.
-    """
-    conn = None
-    cursor = None
-    try:
-        conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="vishal",
-            database="data_spark"  # Update this with your MySQL password
-        )
-        if conn.is_connected():
-            print("Connected to MySQL database")
-            cursor = conn.cursor()
-    except Error as e:
-        print(f"Error connecting to MySQL: {e}")
-    return conn, cursor
-
 def close_mysql_connection(conn, cursor):
     """
     Close MySQL connection and cursor.
     """
-    if conn is not None and conn.is_connected():
-        cursor.close()
-        conn.close()
